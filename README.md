@@ -8,7 +8,8 @@ A Discord bot that automatically redeems Netmarble game coupons for multiple pla
 - 🎮 Support for The Seven Deadly Sins: Grand Cross (easily configurable for other games)
 - 📊 Beautiful Discord embeds showing redemption results
 - 🎁 Displays rewards received from coupons
-- 👥 List all registered players
+- 👥 Dynamic player management (add/remove players via commands)
+- 🌐 Multi-server support (separate player lists per server)
 - ⚡ Fast and reliable
 
 ## Setup
@@ -39,27 +40,16 @@ npm install
 
 ### 4. Configure Bot
 
-Edit `bot.js` and update:
+Create a `.env` file (copy from `.env.example`):
 
-```javascript
-const CONFIG = {
-  discord: {
-    token: 'YOUR_BOT_TOKEN_HERE',        // Paste your bot token
-    channelId: 'YOUR_CHANNEL_ID_HERE'    // Paste channel ID (or leave empty for all channels)
-  },
-  requestDelay: 2000,
-  gameCode: 'tskgb'
-};
-
-const players = [
-  {
-    pid: 'YOUR_PLAYER_ID_HERE',
-    accountName: 'Player Name',
-    discordID: 'DISCORD_USER_ID'
-  }
-  // Add more players...
-];
+```env
+DISCORD_BOT_TOKEN=your_bot_token_here
+# DISCORD_CHANNEL_ID=your_channel_id_here  # Optional: Leave commented for all channels
+GAME_CODE=tskgb
+REQUEST_DELAY=2000
 ```
+
+**Note:** The bot now supports multiple servers! Each server has its own player list stored separately.
 
 ### 5. Run Bot
 
@@ -76,19 +66,32 @@ You should see:
 
 ## Commands
 
-### `!redeem <CODE>`
-Redeem a coupon code for all registered players.
+### Player Management
 
-**Example:**
-```
-!redeem FREEGEMS2024
-```
+- **`!addplayer <PID> <AccountName>`** - Add your player to this server
+  ```
+  !addplayer ABC123DEF456 MyGameAccount
+  ```
 
-### `!players`
-List all registered players.
+- **`!removeplayer <PID>`** - Remove your player from this server
+  ```
+  !removeplayer ABC123DEF456
+  ```
 
-### `!help`
-Show available commands.
+- **`!mypid`** - Show your registered player info
+
+- **`!players`** - List all registered players in this server
+
+### Coupon Redemption
+
+- **`!redeem <CODE>`** - Redeem a coupon code for all registered players in this server
+  ```
+  !redeem FREEGEMS2024
+  ```
+
+### Other
+
+- **`!help`** - Show available commands
 
 ## How to Get Player ID (PID)
 
@@ -99,24 +102,12 @@ Show available commands.
 5. Look for the request to `/api/coupon/reward`
 6. Check the URL parameters - the `pid` parameter is your Player ID
 
-## Adding More Players
+## Multi-Server Support
 
-Just add more objects to the `players` array:
-
-```javascript
-const players = [
-  {
-    pid: 'PLAYER_ID_1',
-    accountName: 'Main Account',
-    discordID: '123456789'
-  },
-  {
-    pid: 'PLAYER_ID_2',
-    accountName: 'Alt Account',
-    discordID: '987654321'
-  }
-];
-```
+The bot automatically manages separate player lists for each Discord server:
+- Players added in Server A won't appear in Server B
+- Each server can have different players registered
+- Player data is stored in `players.json` organized by server ID
 
 ## Changing Game
 

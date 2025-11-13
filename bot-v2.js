@@ -25,17 +25,22 @@ function loadPlayers() {
   try {
     if (fs.existsSync(CONFIG.playersFile)) {
       const data = fs.readFileSync(CONFIG.playersFile, 'utf8');
-      return JSON.parse(data);
+      const loaded = JSON.parse(data);
+      // Migrate old format to new format
+      if (Array.isArray(loaded)) {
+        return { 'default': loaded };
+      }
+      return loaded;
     }
   } catch (error) {
     console.error('Error loading players:', error.message);
   }
-  return [];
+  return {};
 }
 
-function savePlayers(players) {
+function savePlayers(allPlayers) {
   try {
-    fs.writeFileSync(CONFIG.playersFile, JSON.stringify(players, null, 2));
+    fs.writeFileSync(CONFIG.playersFile, JSON.stringify(allPlayers, null, 2));
     return true;
   } catch (error) {
     console.error('Error saving players:', error.message);
@@ -43,7 +48,15 @@ function savePlayers(players) {
   }
 }
 
-let players = loadPlayers();
+function getGuildPlayers(guildId) {
+  return allPlayers[guildId] || [];
+}
+
+function setGuildPlayers(guildId, players) {
+  allPlayers[guildId] = players;
+}
+
+let allPlayers = loadPlayers();
 
 // ============================================================================
 // Discord Bot Setup
@@ -59,7 +72,8 @@ const client = new Client({
 
 client.once('ready', () => {
   console.log(`✅ Bot is ready! Logged in as ${client.user.tag}`);
-  console.log(`📊 Monitoring ${players.length} player(s)`);
+  const totalPlayers = Object.values(allPlayers).reduce((sum, arr) => sum + arr.length, 0);
+  console.log(`📊 Monitoring ${totalPlayers} player(s) across ${Object.keys(allPlayers).length} server(s)`);
   console.log(`🎮 Game: ${CONFIG.gameCode}`);
   console.log(`💾 Data file: ${CONFIG.playersFile}`);
 });
@@ -67,12 +81,14 @@ client.once('ready', () => {
 client.on('messageCreate', async (message) => {
   if (message.author.bot) return;
   if (CONFIG.discord.channelId && message.channel.id !== CONFIG.discord.channelId) return;
+  if (!message.guild) return; // Ignore DMs
   
   const content = message.content.trim();
+  const guildId = message.guild.id;
   
   // Help command
   if (content === '!help' || content === '!commands') {
-    await sendHelpMessage(message.channel);
+    await sendHelpMessage(message.channel, guildId);
     return;
   }
   
@@ -83,31 +99,31 @@ client.on('messageCreate', async (message) => {
       await message.reply('❌ Please provide a coupon code. Usage: `!redeem COUPONCODE`');
       return;
     }
-    await redeemCouponForAll(message, couponCode);
+    await redeemCouponForAll(message, couponCode, guildId);
     return;
   }
   
   // List players command
   if (content === '!players' || content === '!list') {
-    await listPlayers(message.channel);
+    await listPlayers(message.channel, guildId);
     return;
   }
   
   // Add player command
   if (content.startsWith('!addplayer ')) {
-    await addPlayer(message);
+    await addPlayer(message, guildId);
     return;
   }
   
   // Remove player command
   if (content.startsWith('!removeplayer ')) {
-    await removePlayer(message);
+    await removePlayer(message, guildId);
     return;
   }
   
   // My PID command
   if (content === '!mypid' || content === '!myplayer') {
-    await showMyPlayer(message);
+    await showMyPlayer(message, guildId);
     return;
   }
 });
@@ -116,7 +132,7 @@ client.on('messageCreate', async (message) => {
 // Player Management Commands
 // ============================================================================
 
-async function addPlayer(message) {
+async function addPlayer(message, guildId) {
   const args = message.content.substring(11).trim().split(' ');
   
   if (args.length < 2) {
@@ -128,10 +144,12 @@ async function addPlayer(message) {
   const accountName = args.slice(1).join(' ');
   const discordID = message.author.id;
   
-  // Check if player already exists
+  const players = getGuildPlayers(guildId);
+  
+  // Check if player already exists in this server
   const existingPlayer = players.find(p => p.pid === pid || p.discordID === discordID);
   if (existingPlayer) {
-    await message.reply('❌ You already have a player registered or this PID is already in use!');
+    await message.reply('❌ You already have a player registered in this server or this PID is already in use!');
     return;
   }
   
@@ -144,8 +162,9 @@ async function addPlayer(message) {
   };
   
   players.push(newPlayer);
+  setGuildPlayers(guildId, players);
   
-  if (savePlayers(players)) {
+  if (savePlayers(allPlayers)) {
     const embed = new EmbedBuilder()
       .setTitle('✅ Player Added Successfully')
       .setColor(0x00ff00)
@@ -154,17 +173,17 @@ async function addPlayer(message) {
         { name: 'PID', value: pid, inline: true },
         { name: 'Discord User', value: `<@${discordID}>`, inline: true }
       )
-      .setFooter({ text: `Total players: ${players.length}` })
+      .setFooter({ text: `Total players in this server: ${players.length}` })
       .setTimestamp();
     
     await message.reply({ embeds: [embed] });
-    console.log(`✅ Added player: ${accountName} (${pid}) for user ${message.author.tag}`);
+    console.log(`✅ Added player: ${accountName} (${pid}) for user ${message.author.tag} in guild ${guildId}`);
   } else {
     await message.reply('❌ Failed to save player data. Please try again.');
   }
 }
 
-async function removePlayer(message) {
+async function removePlayer(message, guildId) {
   const args = message.content.substring(14).trim();
   
   if (!args) {
@@ -175,6 +194,7 @@ async function removePlayer(message) {
   const discordID = message.author.id;
   const isAdmin = message.member.permissions.has(PermissionFlagsBits.Administrator);
   
+  let players = getGuildPlayers(guildId);
   let playerToRemove;
   
   // Check if it's a mention
@@ -195,14 +215,15 @@ async function removePlayer(message) {
   }
   
   if (!playerToRemove) {
-    await message.reply('❌ Player not found!');
+    await message.reply('❌ Player not found in this server!');
     return;
   }
   
   // Remove player
   players = players.filter(p => p.pid !== playerToRemove.pid);
+  setGuildPlayers(guildId, players);
   
-  if (savePlayers(players)) {
+  if (savePlayers(allPlayers)) {
     const embed = new EmbedBuilder()
       .setTitle('✅ Player Removed')
       .setColor(0xff0000)
@@ -210,22 +231,23 @@ async function removePlayer(message) {
         { name: 'Account Name', value: playerToRemove.accountName, inline: true },
         { name: 'PID', value: playerToRemove.pid, inline: true }
       )
-      .setFooter({ text: `Total players: ${players.length}` })
+      .setFooter({ text: `Total players in this server: ${players.length}` })
       .setTimestamp();
     
     await message.reply({ embeds: [embed] });
-    console.log(`✅ Removed player: ${playerToRemove.accountName} (${playerToRemove.pid})`);
+    console.log(`✅ Removed player: ${playerToRemove.accountName} (${playerToRemove.pid}) from guild ${guildId}`);
   } else {
     await message.reply('❌ Failed to save changes. Please try again.');
   }
 }
 
-async function showMyPlayer(message) {
+async function showMyPlayer(message, guildId) {
   const discordID = message.author.id;
+  const players = getGuildPlayers(guildId);
   const player = players.find(p => p.discordID === discordID);
   
   if (!player) {
-    await message.reply('❌ You don\'t have a player registered!\nUse `!addplayer <PID> <AccountName>` to add one.');
+    await message.reply('❌ You don\'t have a player registered in this server!\nUse `!addplayer <PID> <AccountName>` to add one.');
     return;
   }
   
@@ -246,13 +268,15 @@ async function showMyPlayer(message) {
 // Coupon Redemption
 // ============================================================================
 
-async function redeemCouponForAll(message, couponCode) {
+async function redeemCouponForAll(message, couponCode, guildId) {
+  const players = getGuildPlayers(guildId);
+  
   if (players.length === 0) {
-    await message.reply('❌ No players registered! Use `!addplayer <PID> <AccountName>` to add a player.');
+    await message.reply('❌ No players registered in this server! Use `!addplayer <PID> <AccountName>` to add a player.');
     return;
   }
   
-  console.log(`Redeeming coupon ${couponCode} for all players...`);
+  console.log(`Redeeming coupon ${couponCode} for ${players.length} player(s) in guild ${guildId}...`);
   
   const statusMsg = await message.reply(`🔄 Redeeming coupon **${couponCode}** for ${players.length} player(s)...`);
   
@@ -378,7 +402,9 @@ async function sendRedemptionResults(channel, results, requestedBy) {
   await channel.send({ embeds: [embed] });
 }
 
-async function sendHelpMessage(channel) {
+async function sendHelpMessage(channel, guildId) {
+  const players = getGuildPlayers(guildId);
+  
   const embed = new EmbedBuilder()
     .setTitle('🎮 Coupon Redeemer Bot - Commands')
     .setDescription('Use these commands to manage players and redeem coupons:')
@@ -400,15 +426,17 @@ async function sendHelpMessage(channel) {
         inline: false
       }
     )
-    .setFooter({ text: `Currently ${players.length} player(s) registered` })
+    .setFooter({ text: `Currently ${players.length} player(s) registered in this server` })
     .setTimestamp();
   
   await channel.send({ embeds: [embed] });
 }
 
-async function listPlayers(channel) {
+async function listPlayers(channel, guildId) {
+  const players = getGuildPlayers(guildId);
+  
   if (players.length === 0) {
-    await channel.send('❌ No players registered yet! Use `!addplayer <PID> <AccountName>` to add one.');
+    await channel.send('❌ No players registered in this server yet! Use `!addplayer <PID> <AccountName>` to add one.');
     return;
   }
   
@@ -420,7 +448,7 @@ async function listPlayers(channel) {
     .setTitle('👥 Registered Players')
     .setDescription(playerList)
     .setColor(0x0099ff)
-    .setFooter({ text: `Total: ${players.length} player(s)` })
+    .setFooter({ text: `Total: ${players.length} player(s) in this server` })
     .setTimestamp();
   
   await channel.send({ embeds: [embed] });
