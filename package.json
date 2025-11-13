@@ -1,0 +1,23 @@
+{
+  "name": "netmarble-coupon-bot",
+  "version": "1.0.0",
+  "description": "Discord bot for redeeming Netmarble game coupons",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot-v2.js",
+    "dev": "node bot-v2.js",
+    "old": "node bot.js"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "netmarble",
+    "coupon"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.14.1",
+    "dotenv": "^17.2.3"
+  }
+}
