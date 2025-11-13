@@ -146,10 +146,10 @@ async function addPlayer(message, guildId) {
   
   const players = getGuildPlayers(guildId);
   
-  // Check if player already exists in this server
-  const existingPlayer = players.find(p => p.pid === pid || p.discordID === discordID);
+  // Check if PID already exists in this server
+  const existingPlayer = players.find(p => p.pid === pid);
   if (existingPlayer) {
-    await message.reply('❌ You already have a player registered in this server or this PID is already in use!');
+    await message.reply('❌ This PID is already registered in this server!');
     return;
   }
   
@@ -244,21 +244,22 @@ async function removePlayer(message, guildId) {
 async function showMyPlayer(message, guildId) {
   const discordID = message.author.id;
   const players = getGuildPlayers(guildId);
-  const player = players.find(p => p.discordID === discordID);
+  const myPlayers = players.filter(p => p.discordID === discordID);
   
-  if (!player) {
-    await message.reply('❌ You don\'t have a player registered in this server!\nUse `!addplayer <PID> <AccountName>` to add one.');
+  if (myPlayers.length === 0) {
+    await message.reply('❌ You don\'t have any players registered in this server!\nUse `!addplayer <PID> <AccountName>` to add one.');
     return;
   }
   
+  const playerList = myPlayers.map((p, i) => 
+    `**${i + 1}. ${p.accountName}**\nPID: \`${p.pid}\`\nAdded: ${new Date(p.addedAt).toLocaleDateString()}`
+  ).join('\n\n');
+  
   const embed = new EmbedBuilder()
-    .setTitle('👤 Your Player Info')
+    .setTitle('👤 Your Players')
+    .setDescription(playerList)
     .setColor(0x0099ff)
-    .addFields(
-      { name: 'Account Name', value: player.accountName, inline: true },
-      { name: 'PID', value: player.pid, inline: true },
-      { name: 'Added', value: new Date(player.addedAt).toLocaleDateString(), inline: true }
-    )
+    .setFooter({ text: `Total: ${myPlayers.length} player(s)` })
     .setTimestamp();
   
   await message.reply({ embeds: [embed] });
@@ -412,7 +413,7 @@ async function sendHelpMessage(channel, guildId) {
     .addFields(
       {
         name: '📝 Player Management',
-        value: '`!addplayer <PID> <Name>` - Add your player\n`!removeplayer <PID>` - Remove your player\n`!mypid` - Show your player info\n`!players` - List all players',
+        value: '`!addplayer <PID> <Name>` - Add a player (can add multiple)\n`!removeplayer <PID>` - Remove a player by PID\n`!mypid` - Show your players\n`!players` - List all players in server',
         inline: false
       },
       {
